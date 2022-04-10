@@ -1,0 +1,87 @@
+trigger:
+  - main
+  - develop
+  - feature/*
+  - hotfix/*
+  - bugfix/*
+
+pr:
+  - main
+  - develop
+  - feature/*
+  - hotfix/*
+  - bugfix/*
+
+stages:
+  - stage: Build
+    displayName: Build   
+    jobs:
+      - job: Install_NodeJs
+        steps:
+          - task: NodeTool@0
+            displayName: Install Node.js
+            inputs:
+              versionSpec: "12.x"
+
+  - stage: Dev
+    jobs:
+      - job: Publish_DevPortal_to_DEV
+        displayName: DEV_Publish_Developer_Portal
+        variables:
+          - group: DemoGroupDev   
+          - name: subscriptionId
+            value: "xxxxxxxx-yyyy-zzzz-wwww-dddddddddddd"
+          - name: resourceGroupName
+            value: "rg-developer-portal-dev"
+          - name: serviceName
+            value: "apim-demo-developer-portal-dev"
+        pool:
+          vmImage: windows-latest
+        steps:
+          - script: |
+              npm install
+            displayName: "npm install"
+            workingDirectory: "$(Build.SourcesDirectory)/api-management-developer-portal"
+          - pwsh: |
+              az login --service-principal --username "$(demoPipelineLoginSPAppIs)" --password "$(demoPipelineLoginSPSecret)" --tenant "$(azureTenantId)" --allow-no-subscriptions
+            displayName: az login with DemoPipelineLoginSP credentials
+          - pwsh: |
+              node ./publish --subscriptionId "$(subscriptionId)" --resourceGroupName "$(resourceGroupName)" --serviceName "$(serviceName)"
+            workingDirectory: "$(Build.SourcesDirectory)/api-management-developer-portal/scripts.v3"
+            displayName: Publish developer portal from $(serviceName)
+
+  - stage: Test
+    condition: |
+      or(
+        eq(variables['Build.SourceBranch'], 'refs/heads/develop'),
+        eq(variables['Build.SourceBranch'], 'refs/heads/main')
+      )
+    jobs:
+      - job: Migrate_and_Publish_DevPortal_to_Test
+        displayName: Test_Migrate_and_Publish_Developer_Portal
+        variables: 
+          - group: DemoGroupTest                  
+          - name: subscriptionId
+            value: "xxxxxxxx-yyyy-zzzz-wwww-dddddddddddd"
+          - name: sourceResourceGroupName
+            value: "rg-developer-portal-dev"
+          - name: destResourceGroupName
+            value: "rg-developer-portal-test"
+          - name: sourceServiceName
+            value: "apim-demo-developer-portal-dev"
+          - name: destServiceName
+            value: "apim-demo-developer-portal-test"
+        pool:
+          vmImage: windows-latest
+        steps:
+          - script: |
+              npm install
+            displayName: "npm install"
+            workingDirectory: "$(Build.SourcesDirectory)/api-management-developer-portal"
+          - pwsh: |
+              az login --service-principal --username "$(demoPipelineLoginSPAppIs)" --password "$(demoPipelineLoginSPSecret)" --tenant "$(azureTenantId)" --allow-no-subscriptions
+            displayName: az login with DemoPipelineLoginSP credentials
+          - pwsh: |
+              node ./migrate --sourceSubscriptionId "$(subscriptionId)" --sourceResourceGroupName "$(sourceResourceGroupName)" --sourceServiceName "$(sourceServiceName)" --destServiceName "$(destServiceName)" --destSubscriptionId "$(subscriptionId)" --destResourceGroupName "$(destResourceGroupName)"
+            workingDirectory: "api-management-developer-portal/scripts.v3"
+            displayName: Run Migrate cmd from $(sourceServiceName) to $(destServiceName)  
